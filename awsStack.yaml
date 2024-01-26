@@ -1,0 +1,104 @@
+Parameters:
+  InstanceName:
+    Type: String
+    Description: 'InstanceName for the Tag Name'
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: 'AMI ID for the EC2 instance'
+  KeyName:
+    Type: String
+    Description: 'KeyName for the EC2 instance'
+    Default: 'SEA-linux-key'
+  InstanceType:
+    Type: String
+    Description: 'InstanceType for the EC2 instance'
+    Default: 'm5.large'
+    AllowedValues:
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+  SubnetId:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: 'Subnet ID'
+
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: 'List of Security Group IDs'
+
+  SelectedVpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'Selected VPC ID'
+
+  NewIngressRules:
+    Type: CommaDelimitedList
+    Description: 'List of Ingress Rules'
+  NewEgressRules:
+    Type: CommaDelimitedList
+    Description: 'List of Egress Rules'
+Resources:
+  NewSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'New Security Group Description'
+      VpcId: !Ref 'SelectedVpcId'
+      SecurityGroupIngress:
+        - IpProtocol: !Select [ 0, !Split [ ":", !Select [ 0, !Ref NewIngressRules ] ] ]
+          FromPort: !Select [ 1, !Split [ ":", !Select [ 0, !Ref NewIngressRules ] ] ]
+          ToPort: !Select [ 2, !Split [ ":", !Select [ 0, !Ref NewIngressRules ] ] ]
+          CidrIp: !Select [ 3, !Split [ ":", !Select [ 0, !Ref NewIngressRules ] ] ]
+      SecurityGroupEgress:
+        - IpProtocol: !Select [ 0, !Split [ ":", !Select [ 0, !Ref NewEgressRules ] ] ]
+          FromPort: !Select [ 1, !Split [ ":", !Select [ 0, !Ref NewEgressRules ] ] ]
+          ToPort: !Select [ 2, !Split [ ":", !Select [ 0, !Ref NewEgressRules ] ] ]
+          CidrIp: !Select [ 3, !Split [ ":", !Select [ 0, !Ref NewEgressRules ] ] ]
+
+      Tags:
+        - Key: 'Name'
+          Value: !Sub
+            - '${InstanceName}-securityGroup'
+            - InstanceName: !Ref InstanceName
+
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: !Split
+            - ","
+            - !Join
+              - ","
+              - - !GetAtt NewSecurityGroup.GroupId
+                - !Join
+                  - ","
+                  - !Ref "SecurityGroupIds"
+
+          SubnetId: !Ref SubnetId
+      BlockDeviceMappings:
+        - DeviceName: '/dev/xvda'  # 루트 디바이스
+          Ebs:
+            VolumeType: 'gp3'
+            Iops: 3000
+            VolumeSize: 30
+            DeleteOnTermination: true
+        - DeviceName: '/dev/sdb'  # 추가 볼륨
+          Ebs:
+            VolumeType: 'gp3'
+            Iops: 100
+            VolumeSize: 32
+            DeleteOnTermination: true
+        - DeviceName: '/dev/sdc'  # 추가 볼륨
+          Ebs:
+            VolumeType: 'gp3'
+            Iops: 300
+            VolumeSize: 100
+            DeleteOnTermination: true
+      Tags:
+        - Key: 'Name'
+          Value: !Ref InstanceName
